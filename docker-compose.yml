@@ -1,0 +1,47 @@
+services:
+  # ── Anki Headless ─────────────────────────────────────────────
+  # Roda o Anki desktop sem GUI (via X11 virtual) + AnkiConnect
+  anki:
+    image: ghcr.io/ankimcp/headless-anki:x11-vnc-v1.1.0
+    container_name: anki-headless
+    restart: unless-stopped
+    entrypoint: ["bash", "/app/entrypoint.sh"]
+    volumes:
+      - anki-data:/data
+      - ./config/entrypoint.sh:/app/entrypoint.sh:ro
+      - ./config/ankiconnect-config.json:/app/ankiconnect-config.json:ro
+    ports:
+      - "8765:8765"   # AnkiConnect API (interno)
+      - "5900:5900"   # VNC - para setup inicial do AnkiWeb login
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Anki MCP Server ───────────────────────────────────────────
+  # Expoe o MCP endpoint HTTP para clientes remotos (Claude, etc)
+  mcp-server:
+    image: node:20-slim
+    container_name: anki-mcp-server
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      sh -c "npm install -g @ankimcp/anki-mcp-server &&
+             ankimcp
+             --host 0.0.0.0
+             --port 3141"
+    environment:
+      - ANKI_CONNECT_URL=http://anki:8765
+      - ANKI_CONNECT_TIMEOUT=10000
+      - READ_ONLY=false
+    ports:
+      - "3141:3141"   # MCP Server HTTP endpoint
+    depends_on:
+      anki:
+        condition: service_healthy
+
+volumes:
+  anki-data:
+    driver: local
