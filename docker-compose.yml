@@ -6,13 +6,16 @@ services:
     container_name: anki-headless
     restart: unless-stopped
     entrypoint: ["bash", "/app/entrypoint.sh"]
+    env_file:
+      - .env
     volumes:
       - anki-data:/data
       - ./config/entrypoint.sh:/app/entrypoint.sh:ro
       - ./config/ankiconnect-config.json:/app/ankiconnect-config.json:ro
+      - ./config/setup-sync.py:/app/setup-sync.py:ro
     ports:
       - "8765:8765"   # AnkiConnect API (interno)
-      - "5900:5900"   # VNC - para setup inicial do AnkiWeb login
+      - "5900:5900"   # VNC - debug visual (manter fechada em prod)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765"]
       interval: 30s

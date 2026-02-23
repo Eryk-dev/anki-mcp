@@ -47,6 +47,12 @@ EOF
 # ── Aplica config do AnkiConnect (bind 0.0.0.0) ────────────────
 cp /app/ankiconnect-config.json "$ADDON_DIR/config.json"
 
+# ── Login automatico no AnkiWeb (se credenciais definidas) ──────
+if [ -n "$ANKIWEB_USER" ] && [ -n "$ANKIWEB_PASS" ]; then
+    echo "[entrypoint] Executando login automatico no AnkiWeb..."
+    python3 /app/setup-sync.py || echo "[entrypoint] AVISO: login automatico falhou, continua sem sync."
+fi
+
 # ── Permissoes ──────────────────────────────────────────────────
 chown -R anki:anki /data
 
