@@ -1,155 +1,80 @@
 """
 Auto-Upload Sync Addon for Headless Anki 25.x
 
-Two strategies:
-1. Adds a custom AnkiConnect action 'forceFullUpload' that uses the
-   backend API directly (no GUI dialogs).
-2. Patches the sync flow to auto-resolve full sync conflicts.
-
-Based on Anki developer recommendation:
-https://forums.ankiweb.net/t/is-there-any-supported-way-to-authenticate-ankiweb-login-without-using-the-gui/67637
+Watches for the full sync dialog and auto-clicks "Upload to AnkiWeb".
+Safe approach: no backend hacking, just clicks the Qt button.
 """
 
-from aqt import mw, gui_hooks
-import json
-import sys
+from aqt import mw
+from aqt.qt import QApplication, QMessageBox, QTimer
 
 
 def _log(msg):
     print(f"[auto-sync] {msg}", flush=True)
 
 
-def _do_full_upload():
+def _check_sync_dialogs():
     """
-    Force full upload to AnkiWeb using Anki backend directly.
-    Bypasses all GUI dialogs.
-    """
-    if mw.col is None:
-        _log("ERROR: Collection not open")
-        return False
-
-    auth = mw.pm.sync_auth()
-    if auth is None:
-        _log("ERROR: No sync auth (not logged in)")
-        return False
-
-    _log("Starting full upload via backend...")
-
-    try:
-        # Close collection for full sync
-        mw.col.close_for_full_sync()
-        _log("Collection closed for sync.")
-
-        # Do the full upload via backend
-        mw.col.full_upload_or_download(
-            auth=auth,
-            server_usn=None,
-            upload=True,
-        )
-        _log("Full upload completed successfully!")
-        return True
-
-    except AttributeError:
-        _log("full_upload_or_download not available, trying alternative...")
-        try:
-            # Alternative for different Anki versions
-            mw.col._backend.full_upload_or_download(
-                auth=auth,
-                upload=True,
-            )
-            _log("Full upload (alt) completed!")
-            return True
-        except Exception as e2:
-            _log(f"Alternative also failed: {e2}")
-            return False
-
-    except Exception as e:
-        _log(f"Full upload error: {e}")
-        return False
-
-    finally:
-        # Reopen collection
-        try:
-            if not mw.col or mw.col.db is None:
-                mw.loadCollection()
-                _log("Collection reopened.")
-        except Exception as e:
-            _log(f"Reopen warning: {e}")
-
-
-def _patch_ankiconnect():
-    """
-    Add a 'forceFullUpload' action to AnkiConnect.
-    This allows calling it via: {"action": "forceFullUpload", "version": 6}
+    Check all open dialogs for sync-related prompts.
+    Auto-click "Upload to AnkiWeb" if found.
     """
     try:
-        # Find the AnkiConnect addon
-        addon_dir = "/data/addons21/2055492159"
-        sys.path.insert(0, addon_dir)
+        for widget in QApplication.topLevelWidgets():
+            if not widget.isVisible():
+                continue
 
-        # Try to patch the AnkiConnect instance
-        import importlib
-        ac_module = importlib.import_module("__init__")
+            # Check QMessageBox dialogs (sync conflict dialog)
+            if isinstance(widget, QMessageBox):
+                text = widget.text() + " " + widget.informativeText()
+                _log(f"Dialog found: {text[:100]}...")
 
-        if hasattr(ac_module, "AnkiConnect"):
-            # Add method to the class
-            def forceFullUpload(self):
-                success = _do_full_upload()
-                return {"success": success}
+                for button in widget.buttons():
+                    btn_text = button.text().lower()
+                    # Click "Upload" / "Upload to AnkiWeb" / "Enviar"
+                    if any(kw in btn_text for kw in ["upload", "enviar", "subir"]):
+                        _log(f"Clicking button: '{button.text()}'")
+                        button.click()
+                        return
 
-            ac_module.AnkiConnect.forceFullUpload = forceFullUpload
-            _log("Added 'forceFullUpload' action to AnkiConnect.")
-        else:
-            _log("AnkiConnect class not found in module.")
+                # If no upload button found, try accepting the dialog
+                # (e.g. "OK" for sync completed messages)
+                accept_btn = widget.button(QMessageBox.StandardButton.Ok)
+                if accept_btn:
+                    _log("Clicking OK button.")
+                    accept_btn.click()
+                    return
 
-    except Exception as e:
-        _log(f"Patch AnkiConnect warning: {e}")
-    finally:
-        if addon_dir in sys.path:
-            sys.path.remove(addon_dir)
-
-
-def _try_patch_sync():
-    """Try to patch the sync dialog for auto-upload."""
-    try:
-        import aqt.sync as sync_module
-
-        # List all sync-related functions
-        sync_funcs = [f for f in dir(sync_module) if 'sync' in f.lower() or 'full' in f.lower() or 'upload' in f.lower()]
-        _log(f"Found sync functions: {sync_funcs}")
-
-        # Try to patch full_sync if it exists
-        if hasattr(sync_module, 'full_sync'):
-            original = sync_module.full_sync
-
-            def patched(out):
-                _log("full_sync intercepted! Calling full_upload...")
-                if hasattr(sync_module, 'full_upload'):
-                    sync_module.full_upload(mw)
-                else:
-                    _do_full_upload()
-
-            sync_module.full_sync = patched
-            _log("Patched full_sync -> auto-upload.")
+            # Check for any QDialog (some Anki versions use custom dialogs)
+            from aqt.qt import QDialog, QPushButton
+            if isinstance(widget, QDialog) and widget.windowTitle():
+                title = widget.windowTitle().lower()
+                if any(kw in title for kw in ["sync", "full", "upload", "download"]):
+                    _log(f"Custom dialog found: {widget.windowTitle()}")
+                    # Find and click upload button
+                    for child in widget.findChildren(QPushButton):
+                        btn_text = child.text().lower()
+                        if any(kw in btn_text for kw in ["upload", "enviar"]):
+                            _log(f"Clicking: '{child.text()}'")
+                            child.click()
+                            return
 
     except Exception as e:
-        _log(f"Patch sync warning: {e}")
+        _log(f"Check error: {e}")
 
 
-def on_profile_open():
-    """Setup on profile load."""
-    _log("Profile opened. Setting up auto-sync...")
-    _try_patch_sync()
-
-    # Schedule initial full upload after Anki is fully loaded
-    if mw.col is not None:
-        _log("Scheduling initial full upload in 5 seconds...")
-        mw.progress.timer(
-            5000,
-            lambda: _do_full_upload(),
-            False,
-        )
+# Timer that checks for dialogs every 500ms
+_timer = None
 
 
-gui_hooks.profile_did_open.append(on_profile_open)
-_log("Addon loaded. Waiting for profile open...")
+def _start_watcher():
+    """Start watching for sync dialogs."""
+    global _timer
+    _timer = QTimer()
+    _timer.timeout.connect(_check_sync_dialogs)
+    _timer.start(500)
+    _log("Dialog watcher started (checking every 500ms).")
+
+
+_log("Addon loaded.")
+# Start watcher after event loop is running
+QTimer.singleShot(2000, _start_watcher)
