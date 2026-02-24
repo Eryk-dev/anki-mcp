@@ -2,7 +2,7 @@
 set -e
 
 ADDON_DIR="/data/addons21/2055492159"
-ADDON_PKG="https://ankiweb.net/shared/downloadAddon?id=2055492159&version=250203"
+ADDON_GH="https://codeload.github.com/FooSoft/anki-connect/zip/refs/heads/master"
 
 # ── Ajusta perfil se veio do macOS (Usuário 1 → User 1) ────────
 if [ -d "/data/Usuário 1" ] && [ ! -d "/data/User 1" ]; then
@@ -16,13 +16,16 @@ if [ -d "/data/Usuário 1" ] && [ ! -d "/data/User 1" ]; then
     fi
 fi
 
-# ── Instala AnkiConnect se nao existir ──────────────────────────
-if [ ! -d "$ADDON_DIR" ]; then
-    echo "[entrypoint] Instalando AnkiConnect..."
+# ── Instala AnkiConnect via GitHub ──────────────────────────────
+if [ ! -d "$ADDON_DIR" ] || [ ! -f "$ADDON_DIR/__init__.py" ]; then
+    echo "[entrypoint] Instalando AnkiConnect via GitHub..."
+    rm -rf "$ADDON_DIR"
     mkdir -p "$ADDON_DIR"
-    curl -sL "$ADDON_PKG" -o /tmp/ankiconnect.zip
-    unzip -o /tmp/ankiconnect.zip -d "$ADDON_DIR"
-    rm /tmp/ankiconnect.zip
+    curl -sL "$ADDON_GH" -o /tmp/ankiconnect.zip
+    unzip -o /tmp/ankiconnect.zip -d /tmp/ankiconnect-src
+    cp -r /tmp/ankiconnect-src/anki-connect-master/plugin/* "$ADDON_DIR/"
+    rm -rf /tmp/ankiconnect.zip /tmp/ankiconnect-src
+    echo "[entrypoint] AnkiConnect instalado com sucesso."
 fi
 
 # ── Manifest e meta (suprime avisos de update) ──────────────────
