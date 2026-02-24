@@ -8,23 +8,44 @@ Params:   u=email&p=password
 Response: {"key": "abc123..."}
 """
 
+import io
 import json
 import os
 import pickle
 import sqlite3
 import sys
 import urllib.request
-import urllib.parse
 
 ANKIWEB_SYNC_URL = "https://sync.ankiweb.net/sync/hostKey"
 PREFS_DB = "/data/prefs21.db"
 PROFILE_NAME = "User 1"
 
 
+def _build_multipart(fields: dict) -> tuple[bytes, str]:
+    """Constroi multipart/form-data com campo 'data' contendo JSON."""
+    boundary = "----AnkiSyncBoundary"
+    body = io.BytesIO()
+
+    json_payload = json.dumps(fields)
+    body.write(f"--{boundary}\r\n".encode())
+    body.write(b'Content-Disposition: form-data; name="data"\r\n')
+    body.write(b"Content-Type: application/json\r\n\r\n")
+    body.write(json_payload.encode())
+    body.write(f"\r\n--{boundary}--\r\n".encode())
+
+    content_type = f"multipart/form-data; boundary={boundary}"
+    return body.getvalue(), content_type
+
+
 def get_host_key(user: str, password: str) -> str:
-    """Autentica com AnkiWeb e retorna o hkey."""
-    data = urllib.parse.urlencode({"u": user, "p": password}).encode()
-    req = urllib.request.Request(ANKIWEB_SYNC_URL, data=data)
+    """Autentica com AnkiWeb via multipart/form-data e retorna o hkey."""
+    payload, content_type = _build_multipart({"u": user, "p": password})
+
+    req = urllib.request.Request(
+        ANKIWEB_SYNC_URL,
+        data=payload,
+        headers={"Content-Type": content_type},
+    )
 
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -34,6 +55,10 @@ def get_host_key(user: str, password: str) -> str:
                 print(f"[setup-sync] Resposta inesperada: {body}", file=sys.stderr)
                 sys.exit(1)
             return key
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode() if e.readable() else ""
+        print(f"[setup-sync] Erro HTTP {e.code}: {error_body}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"[setup-sync] Erro ao autenticar com AnkiWeb: {e}", file=sys.stderr)
         sys.exit(1)

@@ -60,9 +60,23 @@ fi
 # ── Permissoes ──────────────────────────────────────────────────
 chown -R anki:anki /data
 
+# ── Inicia X11 virtual + VNC + Window Manager ───────────────────
+echo "[entrypoint] Iniciando X11 virtual..."
+Xvfb :99 -screen 0 1920x1080x24 &
+sleep 1
+
+openbox &
+sleep 1
+
+x11vnc -display :99 -forever -nopw -rfbport 5900 &
+sleep 1
+
+export DISPLAY=:99
+export QTWEBENGINE_DISABLE_SANDBOX=1
+
 # ── Inicia Anki em background ───────────────────────────────────
 echo "[entrypoint] Iniciando Anki headless..."
-/app/start.sh &
+su -s /bin/bash anki -c "DISPLAY=:99 QTWEBENGINE_DISABLE_SANDBOX=1 anki -b /data" &
 ANKI_PID=$!
 
 # ── Aguarda AnkiConnect ficar pronto ────────────────────────────
@@ -90,6 +104,5 @@ echo " Anki: http://0.0.0.0:8765"
 echo " VNC:  :5900"
 echo "============================================"
 
-# ── Mantém container vivo (espera qualquer processo morrer) ─────
-wait -n $ANKI_PID $MCP_PID
-exit $?
+# ── Mantém container vivo ───────────────────────────────────────
+wait $ANKI_PID
