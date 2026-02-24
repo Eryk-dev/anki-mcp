@@ -1,8 +1,9 @@
 """
-Auto-Upload Sync Addon for Headless Anki 25.x
+Auto-Sync Addon for Headless Anki 25.x
 
-Watches for the full sync dialog and auto-clicks "Upload to AnkiWeb".
-Safe approach: no backend hacking, just clicks the Qt button.
+On full sync conflict: always DOWNLOADS from AnkiWeb.
+This ensures the server gets the user's collection with correct model IDs.
+After the initial download, regular syncs do incremental merges automatically.
 """
 
 from aqt import mw
@@ -16,7 +17,8 @@ def _log(msg):
 def _check_sync_dialogs():
     """
     Check all open dialogs for sync-related prompts.
-    Auto-click "Upload to AnkiWeb" if found.
+    Always click "Download from AnkiWeb" on full sync conflicts.
+    This ensures the server stays in sync with the user's collection.
     """
     try:
         for widget in QApplication.topLevelWidgets():
@@ -28,16 +30,15 @@ def _check_sync_dialogs():
                 text = widget.text() + " " + widget.informativeText()
                 _log(f"Dialog found: {text[:100]}...")
 
+                # ALWAYS download from AnkiWeb - user's collection is source of truth
                 for button in widget.buttons():
                     btn_text = button.text().lower()
-                    # Click "Upload" / "Upload to AnkiWeb" / "Enviar"
-                    if any(kw in btn_text for kw in ["upload", "enviar", "subir"]):
+                    if any(kw in btn_text for kw in ["download", "baixar"]):
                         _log(f"Clicking button: '{button.text()}'")
                         button.click()
                         return
 
-                # If no upload button found, try accepting the dialog
-                # (e.g. "OK" for sync completed messages)
+                # Fallback: OK for info/completion dialogs
                 accept_btn = widget.button(QMessageBox.StandardButton.Ok)
                 if accept_btn:
                     _log("Clicking OK button.")
@@ -50,10 +51,9 @@ def _check_sync_dialogs():
                 title = widget.windowTitle().lower()
                 if any(kw in title for kw in ["sync", "full", "upload", "download"]):
                     _log(f"Custom dialog found: {widget.windowTitle()}")
-                    # Find and click upload button
                     for child in widget.findChildren(QPushButton):
                         btn_text = child.text().lower()
-                        if any(kw in btn_text for kw in ["upload", "enviar"]):
+                        if any(kw in btn_text for kw in ["download", "baixar"]):
                             _log(f"Clicking: '{child.text()}'")
                             child.click()
                             return
@@ -72,7 +72,7 @@ def _start_watcher():
     _timer = QTimer()
     _timer.timeout.connect(_check_sync_dialogs)
     _timer.start(500)
-    _log("Dialog watcher started (checking every 500ms).")
+    _log("Dialog watcher started - will DOWNLOAD on full sync conflicts.")
 
 
 _log("Addon loaded.")

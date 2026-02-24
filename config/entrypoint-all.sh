@@ -8,6 +8,21 @@ echo "============================================"
 echo " Anki MCP Server - Starting..."
 echo "============================================"
 
+# ── Primeiro boot: limpa colecao para forcar download do AnkiWeb ──
+# Garante que o servidor baixe a colecao do usuario (com model IDs corretos)
+# Sem isso, o servidor cria IDs novos que nao batem com o Anki local
+if [ ! -f /data/.collection_initialized ]; then
+    echo "[entrypoint] Primeiro boot - limpando colecao para download do AnkiWeb..."
+    rm -f "/data/User 1/collection.anki2"
+    rm -f "/data/User 1/collection.anki2-wal"
+    rm -f "/data/User 1/collection.anki2-shm"
+    rm -f "/data/User 1/collection.anki21b"
+    rm -f "/data/User 1/collection.anki21b-wal"
+    rm -f "/data/User 1/collection.anki21b-shm"
+    touch /data/.collection_initialized
+    echo "[entrypoint] Colecao limpa. Sync inicial vai baixar do AnkiWeb."
+fi
+
 # ── Ajusta perfil se veio do macOS (Usuário 1 → User 1) ────────
 if [ -d "/data/Usuário 1" ] && [ ! -d "/data/User 1" ]; then
     echo "[entrypoint] Renomeando perfil 'Usuário 1' → 'User 1'..."
@@ -109,7 +124,7 @@ for i in $(seq 1 60); do
     sleep 2
 done
 
-# ── Força sync inicial (auto-upload via addon) ──────────────────
+# ── Força sync inicial (auto-download via addon no primeiro boot) ─
 echo "[entrypoint] Executando sync inicial..."
 curl -sf http://localhost:8765 -d '{"action":"sync","version":6}' && \
     echo "[entrypoint] Sync inicial executado." || \
