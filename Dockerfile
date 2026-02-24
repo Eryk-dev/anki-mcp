@@ -12,6 +12,7 @@ RUN apt-get update && \
 # ── Copia configs ───────────────────────────────────────────────
 COPY config/ankiconnect-config.json /app/ankiconnect-config.json
 COPY config/setup-sync.py /app/setup-sync.py
+COPY config/auto-sync-addon/ /app/auto-sync-addon/
 COPY config/entrypoint-all.sh /app/entrypoint-all.sh
 RUN chmod +x /app/entrypoint-all.sh
 

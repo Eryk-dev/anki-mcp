@@ -51,6 +51,26 @@ EOF
 # ── Config do AnkiConnect (bind 0.0.0.0) ────────────────────────
 cp /app/ankiconnect-config.json "$ADDON_DIR/config.json"
 
+# ── Instala Auto-Sync Addon (resolve full sync sem GUI) ─────────
+AUTOSYNC_DIR="/data/addons21/auto_sync_headless"
+mkdir -p "$AUTOSYNC_DIR"
+cp /app/auto-sync-addon/__init__.py "$AUTOSYNC_DIR/__init__.py"
+cat > "$AUTOSYNC_DIR/manifest.json" << EOF
+{
+    "package": "auto_sync_headless",
+    "name": "Auto Sync Headless",
+    "mod": $TIMESTAMP
+}
+EOF
+cat > "$AUTOSYNC_DIR/meta.json" << EOF
+{
+    "mod": $TIMESTAMP,
+    "disabled": false,
+    "update_enabled": false
+}
+EOF
+echo "[entrypoint] Auto-Sync addon instalado."
+
 # ── Login automatico no AnkiWeb ─────────────────────────────────
 if [ -n "$ANKIWEB_USER" ] && [ -n "$ANKIWEB_PASS" ]; then
     echo "[entrypoint] Autenticando com AnkiWeb..."
@@ -88,6 +108,13 @@ for i in $(seq 1 60); do
     fi
     sleep 2
 done
+
+# ── Força sync inicial (auto-upload via addon) ──────────────────
+echo "[entrypoint] Executando sync inicial..."
+curl -sf http://localhost:8765 -d '{"action":"sync","version":6}' && \
+    echo "[entrypoint] Sync inicial executado." || \
+    echo "[entrypoint] AVISO: sync inicial falhou."
+sleep 3
 
 # ── Inicia MCP Server ───────────────────────────────────────────
 echo "[entrypoint] Iniciando MCP Server na porta ${MCP_PORT}..."
